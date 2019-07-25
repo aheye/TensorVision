@@ -44,6 +44,10 @@ flags = tf.app.flags
 FLAGS = flags.FLAGS
 
 
+#if FLAGS.dist:
+#    import dl_comm.tensorflow as cdl
+
+
 def _copy_parameters_to_traindir(hypes, input_file, target_name, target_dir):
     """
     Helper to copy files defining the network to the saving dir.
@@ -160,10 +164,9 @@ def _write_images_to_disk(hypes, images, step):
 
 
 def _print_eval_dict(eval_names, eval_results, prefix=''):
-    print_str = string.join([nam + ": %.2f" for nam in eval_names],
-                            ', ')
+    print_str = ', '.join([nam + ": %.2f" for nam in eval_names])
     print_str = "   " + prefix + "  " + print_str
-    logging.info(print_str % tuple(eval_results))
+    print(print_str % tuple(eval_results))
 
 
 class ExpoSmoother():
@@ -244,16 +247,17 @@ def run_training(hypes, modules, tv_graph, tv_sess, start_step=0):
                                       tv_graph['losses']['total_loss']],
                                      feed_dict=feed_dict)
 
-            _print_training_status(hypes, step, loss_value, start_time, lr)
-
             eval_results = sess.run(eval_ops, feed_dict=feed_dict)
 
-            _print_eval_dict(eval_names, eval_results, prefix='   (raw)')
+            if not FLAGS.dist or cdl.get_rank() == 0:
+                _print_training_status(hypes, step, loss_value, start_time, lr)
+                _print_eval_dict(eval_names, eval_results, prefix='   (raw)')
 
             dict_smoother.update_weights(eval_results)
             smoothed_results = dict_smoother.get_weights()
 
-            _print_eval_dict(eval_names, smoothed_results, prefix='(smooth)')
+            if not FLAGS.dist or cdl.get_rank() == 0:
+                _print_eval_dict(eval_names, smoothed_results, prefix='(smooth)')
 
             # Reset timer
             start_time = time.time()
@@ -299,18 +303,19 @@ def run_training(hypes, modules, tv_graph, tv_sess, start_step=0):
                 scp.misc.imsave(image_file, images[0][1])
                 n = n + 1
 
-            logging.info('Raw Results:')
-            utils.print_eval_dict(eval_dict, prefix='(raw)   ')
-            _write_eval_dict_to_summary(eval_dict, 'Evaluation/raw',
-                                        summary_writer, step)
+            if not FLAGS.dist or cdl.get_rank() == 0:
+                logging.info('Raw Results:')
+                utils.print_eval_dict(eval_dict, prefix='(raw)   ')
+                _write_eval_dict_to_summary(eval_dict, 'Evaluation/raw',
+                                            summary_writer, step)
 
-            logging.info('Smooth Results:')
-            names, res = zip(*eval_dict)
-            smoothed = py_smoother.update_weights(res)
-            eval_dict = zip(names, smoothed)
-            utils.print_eval_dict(eval_dict, prefix='(smooth)')
-            _write_eval_dict_to_summary(eval_dict, 'Evaluation/smoothed',
-                                        summary_writer, step)
+                logging.info('Smooth Results:')
+                names, res = zip(*eval_dict)
+                smoothed = py_smoother.update_weights(res)
+                eval_dict = zip(names, smoothed)
+                utils.print_eval_dict(eval_dict, prefix='(smooth)')
+                _write_eval_dict_to_summary(eval_dict, 'Evaluation/smoothed',
+                                            summary_writer, step)
 
             # Reset timer
             start_time = time.time()
@@ -339,13 +344,13 @@ def _print_training_status(hypes, step, loss_value, start_time, lr):
     examples_per_sec = hypes['solver']['batch_size'] / duration
     sec_per_batch = float(duration)
 
-    logging.info(info_str.format(step=step,
-                                 total_steps=hypes['solver']['max_steps'],
-                                 loss_value=loss_value,
-                                 lr_value=lr,
-                                 sec_per_batch=sec_per_batch,
-                                 examples_per_sec=examples_per_sec)
-                 )
+    print(info_str.format(step=step,
+                          total_steps=hypes['solver']['max_steps'],
+                          loss_value=loss_value,
+                          lr_value=lr,
+                          sec_per_batch=sec_per_batch,
+                          examples_per_sec=examples_per_sec)
+          )
 
 
 def do_training(hypes):

@@ -52,7 +52,7 @@ def download(url, dest_directory):
 
 def print_eval_dict(eval_dict, prefix=''):
     for name, value in eval_dict:
-            logging.info('    %s %s : % 0.04f ' % (name, prefix, value))
+            print('    %s %s : % 0.04f ' % (name, prefix, value))
     return
 
 
